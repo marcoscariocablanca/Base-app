@@ -1,13 +1,15 @@
+import React from 'react'
 import { cn } from '../../lib/utils'
 
 interface CardProps {
   children: React.ReactNode
   className?: string
   onClick?: () => void
-  gold?: boolean // gold accent border variant
+  gold?: boolean
+  style?: React.CSSProperties
 }
 
-export function Card({ children, className, onClick, gold }: CardProps) {
+export function Card({ children, className, onClick, gold, style }: CardProps) {
   return (
     <div
       onClick={onClick}
@@ -20,7 +22,7 @@ export function Card({ children, className, onClick, gold }: CardProps) {
         onClick && 'cursor-pointer active:scale-[0.98] hover:border-[#353528]',
         className
       )}
-      style={gold ? { boxShadow: '0 0 0 1px rgba(154,138,53,0.08)' } : undefined}
+      style={style ?? (gold ? { boxShadow: '0 0 0 1px rgba(154,138,53,0.08)' } : undefined)}
     >
       {children}
     </div>
