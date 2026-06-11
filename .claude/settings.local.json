@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm create *)",
+      "Bash(which node *)",
+      "Read(//Users/marcosgmi/**)",
+      "Bash(command -v node)",
+      "Bash(/usr/local/bin/node --version)",
+      "Bash(find /usr /opt /home -name \"node\" -type f 2>/dev/null | head -5; find ~/Library -name \"node\" -type f 2>/dev/null | head -3; ls ~/Desktop/ 2>/dev/null)"
+    ]
+  }
+}

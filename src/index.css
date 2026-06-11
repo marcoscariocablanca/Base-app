@@ -1,0 +1,103 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    -webkit-tap-highlight-color: transparent;
+    box-sizing: border-box;
+  }
+
+  html {
+    background-color: #0D0D0B;
+    color-scheme: dark;
+  }
+
+  body {
+    margin: 0;
+    padding: 0;
+    min-height: 100vh;
+    min-height: 100dvh;
+    overscroll-behavior: none;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    background-color: #0D0D0B;
+    color: #F5F4EF;
+  }
+
+  /* Safe area — iPhone notch / home bar */
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom, 16px);
+  }
+
+  /* Scrollbar hidden */
+  ::-webkit-scrollbar { width: 0; height: 0; }
+
+  /* Autofill dark override */
+  input:-webkit-autofill,
+  input:-webkit-autofill:hover,
+  input:-webkit-autofill:focus {
+    -webkit-box-shadow: 0 0 0px 1000px #141412 inset;
+    -webkit-text-fill-color: #EAE4CE;
+    caret-color: #EAE4CE;
+    transition: background-color 5000s ease-in-out 0s;
+  }
+
+  /* Remove number input arrows */
+  input[type='number']::-webkit-inner-spin-button,
+  input[type='number']::-webkit-outer-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+
+  /* Textarea resize */
+  textarea { resize: none; }
+}
+
+@layer components {
+  /* The BASE wordmark — serif, tracked, premium */
+  .wordmark {
+    font-family: Georgia, 'Palatino Linotype', Palatino, serif;
+    letter-spacing: 0.28em;
+    font-weight: 400;
+    color: #EAE4CE;
+  }
+
+  /* Decorative divider line (flanking the tagline) */
+  .divider-line {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.75rem;
+    color: #7A6E30;
+    font-size: 0.6rem;
+    letter-spacing: 0.2em;
+  }
+
+  .divider-line::before,
+  .divider-line::after {
+    content: '';
+    display: block;
+    width: 2rem;
+    height: 1px;
+    background: currentColor;
+    opacity: 0.7;
+  }
+
+  /* Gold accent line — used for active states, progress */
+  .accent-line {
+    background: linear-gradient(90deg, transparent, #9A8A35, transparent);
+    height: 1px;
+    width: 100%;
+  }
+}
+
+@layer utilities {
+  .text-balance { text-wrap: balance; }
+
+  /* Gold shimmer effect on elements */
+  .shimmer {
+    background: linear-gradient(90deg, transparent 0%, rgba(212,184,72,0.06) 50%, transparent 100%);
+    background-size: 200% 100%;
+    animation: shimmer 3s ease-in-out infinite;
+  }
+}
