@@ -1,11 +1,12 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import { today } from '../lib/utils'
-import type { NonNegotiable, Meal, Training, Evidence, MentorFeedback } from '../types'
+import type { NonNegotiable, Meal, MealItem, Training, Evidence, MentorFeedback } from '../types'
 
 interface DataState {
   nonNeg: NonNegotiable | null
   meals: Meal[]
+  mealItems: MealItem[]
   training: Training | null
   evidence: Evidence | null
   feedback: MentorFeedback[]
@@ -18,6 +19,8 @@ interface DataState {
   upsertNonNeg: (userId: string, fields: Partial<NonNegotiable>) => Promise<void>
   upsertMeal: (userId: string, meal: Partial<Meal>) => Promise<void>
   deleteMeal: (id: string) => Promise<void>
+  addMealItems: (userId: string, items: Omit<MealItem, 'id' | 'created_at'>[], date?: string) => Promise<void>
+  deleteMealItem: (id: string) => Promise<void>
   upsertTraining: (userId: string, fields: Partial<Training>) => Promise<void>
   upsertEvidence: (userId: string, fields: Partial<Evidence>) => Promise<void>
   fetchFeedback: (userId: string) => Promise<void>
@@ -28,6 +31,7 @@ interface DataState {
 export const useDataStore = create<DataState>((set, get) => ({
   nonNeg: null,
   meals: [],
+  mealItems: [],
   training: null,
   evidence: null,
   feedback: [],
@@ -41,15 +45,17 @@ export const useDataStore = create<DataState>((set, get) => ({
   clearToast: () => set({ toast: null }),
 
   fetchDay: async (userId, date = today()) => {
-    const [nonNegRes, mealsRes, trainingRes, evidenceRes] = await Promise.all([
+    const [nonNegRes, mealsRes, trainingRes, evidenceRes, itemsRes] = await Promise.all([
       supabase.from('non_negotiables').select('*').eq('user_id', userId).eq('date', date).maybeSingle(),
       supabase.from('meals').select('*').eq('user_id', userId).eq('date', date),
       supabase.from('trainings').select('*').eq('user_id', userId).eq('date', date).maybeSingle(),
       supabase.from('evidences').select('*').eq('user_id', userId).eq('date', date).maybeSingle(),
+      supabase.from('meal_items').select('*').eq('user_id', userId).eq('date', date).order('created_at'),
     ])
     set({
       nonNeg: nonNegRes.data,
       meals: mealsRes.data ?? [],
+      mealItems: itemsRes.data ?? [],
       training: trainingRes.data,
       evidence: evidenceRes.data,
     })
@@ -92,6 +98,58 @@ export const useDataStore = create<DataState>((set, get) => ({
   deleteMeal: async (id) => {
     await supabase.from('meals').delete().eq('id', id)
     set((s) => ({ meals: s.meals.filter((m) => m.id !== id) }))
+  },
+
+  addMealItems: async (userId, items, date = today()) => {
+    const { data } = await supabase.from('meal_items').insert(items).select()
+    if (!data) return
+    const newItems = [...get().mealItems, ...data]
+    set({ mealItems: newItems })
+
+    // Update meal record with aggregated macros for each affected meal_type
+    const affectedTypes = [...new Set(items.map((i) => i.meal_type))]
+    for (const mealType of affectedTypes) {
+      const typeItems = newItems.filter((i) => i.meal_type === mealType && i.date === date && i.user_id === userId)
+      const kcal = Math.round(typeItems.reduce((a, i) => a + i.kcal, 0))
+      const protein = parseFloat(typeItems.reduce((a, i) => a + i.protein_g, 0).toFixed(1))
+      const carbs = parseFloat(typeItems.reduce((a, i) => a + i.carbs_g, 0).toFixed(1))
+      const fat = parseFloat(typeItems.reduce((a, i) => a + i.fat_g, 0).toFixed(1))
+      const foods = typeItems.map((i) => i.food_name).join(', ')
+      const existing = get().meals.find((m) => m.meal_type === mealType)
+      const record = {
+        user_id: userId, date, meal_type: mealType,
+        kcal_estimated: kcal, protein_g: protein, carbs_g: carbs, fat_g: fat, foods,
+        ...(existing ? { id: existing.id, hunger_before: existing.hunger_before, satiety_after: existing.satiety_after, mood: existing.mood, notes: existing.notes } : {}),
+      }
+      const { data: mealData } = await supabase.from('meals').upsert(record, { onConflict: existing ? 'id' : 'user_id,date,meal_type' }).select().single()
+      if (mealData) {
+        set((s) => ({
+          meals: s.meals.some((m) => m.id === mealData.id)
+            ? s.meals.map((m) => m.id === mealData.id ? mealData : m)
+            : [...s.meals, mealData],
+        }))
+      }
+    }
+  },
+
+  deleteMealItem: async (id) => {
+    const item = get().mealItems.find((i) => i.id === id)
+    await supabase.from('meal_items').delete().eq('id', id)
+    const remaining = get().mealItems.filter((i) => i.id !== id)
+    set({ mealItems: remaining })
+
+    if (!item) return
+    const typeItems = remaining.filter((i) => i.meal_type === item.meal_type && i.date === item.date)
+    const kcal = Math.round(typeItems.reduce((a, i) => a + i.kcal, 0))
+    const protein = parseFloat(typeItems.reduce((a, i) => a + i.protein_g, 0).toFixed(1))
+    const carbs = parseFloat(typeItems.reduce((a, i) => a + i.carbs_g, 0).toFixed(1))
+    const fat = parseFloat(typeItems.reduce((a, i) => a + i.fat_g, 0).toFixed(1))
+    const foods = typeItems.map((i) => i.food_name).join(', ')
+    const existing = get().meals.find((m) => m.meal_type === item.meal_type)
+    if (existing) {
+      await supabase.from('meals').update({ kcal_estimated: kcal, protein_g: protein, carbs_g: carbs, fat_g: fat, foods }).eq('id', existing.id)
+      set((s) => ({ meals: s.meals.map((m) => m.id === existing.id ? { ...m, kcal_estimated: kcal, protein_g: protein, carbs_g: carbs, fat_g: fat, foods } : m) }))
+    }
   },
 
   upsertTraining: async (userId, fields) => {

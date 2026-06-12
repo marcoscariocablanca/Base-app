@@ -6,7 +6,11 @@
       "Read(//Users/marcosgmi/**)",
       "Bash(command -v node)",
       "Bash(/usr/local/bin/node --version)",
-      "Bash(find /usr /opt /home -name \"node\" -type f 2>/dev/null | head -5; find ~/Library -name \"node\" -type f 2>/dev/null | head -3; ls ~/Desktop/ 2>/dev/null)"
+      "Bash(find /usr /opt /home -name \"node\" -type f 2>/dev/null | head -5; find ~/Library -name \"node\" -type f 2>/dev/null | head -3; ls ~/Desktop/ 2>/dev/null)",
+      "Bash(npx tsc *)",
+      "Bash(git add *)",
+      "Bash(git commit *)",
+      "Bash(git push *)"
     ]
   }
 }

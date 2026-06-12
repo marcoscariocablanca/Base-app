@@ -1,37 +1,52 @@
 import { useEffect, useState } from 'react'
-import { Plus, ChevronDown, ChevronUp, Camera, Trash2 } from 'lucide-react'
+import { ChevronDown, ChevronUp, Trash2, Plus } from 'lucide-react'
 import { useAuthStore } from '../store/authStore'
 import { useDataStore } from '../store/dataStore'
-import { MEAL_LABELS, MEALS_BY_COUNT, MOOD_MAP, cn } from '../lib/utils'
+import { MEAL_LABELS, MEALS_BY_COUNT, MOOD_MAP, cn, today } from '../lib/utils'
 import { AppShell } from '../components/layout/AppShell'
 import { PageHeader } from '../components/layout/PageHeader'
 import { Card } from '../components/ui/Card'
 import { Button } from '../components/ui/Button'
-import { Input, TextArea } from '../components/ui/Input'
+import { TextArea } from '../components/ui/Input'
 import { Slider } from '../components/ui/Slider'
-import type { Meal } from '../types'
+import { FoodSearchModal } from '../components/nutrition/FoodSearchModal'
+import type { Meal, MealItem } from '../types'
 
 type MoodKey = keyof typeof MOOD_MAP
 
-interface MealFormState {
-  foods: string
-  kcal: string
+interface SubjectiveForm {
   hunger: number
   satiety: number
   mood: MoodKey
   notes: string
 }
 
-const DEFAULT_FORM: MealFormState = {
-  foods: '', kcal: '', hunger: 5, satiety: 5, mood: 'neutro', notes: '',
+const DEFAULT_FORM: SubjectiveForm = { hunger: 5, satiety: 5, mood: 'neutro', notes: '' }
+
+function MacroBar({ label, value, max, color }: { label: string; value: number; max: number; color: string }) {
+  const pct = Math.min((value / Math.max(max, 1)) * 100, 100)
+  return (
+    <div className="space-y-1">
+      <div className="flex justify-between items-baseline">
+        <p className="text-[0.55rem] uppercase tracking-widest" style={{ color: '#6A6A5A' }}>{label}</p>
+        <p className="text-xs font-medium" style={{ color }}>{value}g</p>
+      </div>
+      <div className="h-1 rounded-full" style={{ background: '#252520' }}>
+        <div className="h-full rounded-full transition-all duration-700" style={{ width: `${pct}%`, background: color }} />
+      </div>
+    </div>
+  )
 }
 
 export function Alimentacion() {
   const profile = useAuthStore((s) => s.profile)
-  const { meals, fetchDay, upsertMeal, deleteMeal, showToast } = useDataStore()
+  const { meals, mealItems, fetchDay, upsertMeal, deleteMeal, addMealItems, deleteMealItem, showToast } = useDataStore()
+
   const [expanded, setExpanded] = useState<string | null>(null)
-  const [form, setForm] = useState<MealFormState>(DEFAULT_FORM)
+  const [showSubjective, setShowSubjective] = useState<string | null>(null)
+  const [forms, setForms] = useState<Record<string, SubjectiveForm>>({})
   const [saving, setSaving] = useState(false)
+  const [modalMeal, setModalMeal] = useState<string | null>(null)
 
   useEffect(() => {
     if (profile) fetchDay(profile.id)
@@ -40,46 +55,58 @@ export function Alimentacion() {
   if (!profile) return null
 
   const activeMeals = MEALS_BY_COUNT[profile.meals_per_day] ?? MEALS_BY_COUNT[3]
-  const totalKcal = meals.reduce((a, m) => a + (m.kcal_estimated ?? 0), 0)
-  const remaining = profile.daily_kcal_goal - totalKcal
-  const progressPct = Math.min((totalKcal / profile.daily_kcal_goal) * 100, 100)
+  const todayDate = today()
 
-  const getMealData = (type: string) => meals.find((m) => m.meal_type === type as Meal['meal_type'])
+  // Compute day totals from meal_items
+  const dayKcal = Math.round(mealItems.reduce((a, i) => a + i.kcal, 0))
+    || meals.reduce((a, m) => a + (m.kcal_estimated ?? 0), 0)
+  const dayProtein = parseFloat(mealItems.reduce((a, i) => a + i.protein_g, 0).toFixed(1))
+  const dayCarbs = parseFloat(mealItems.reduce((a, i) => a + i.carbs_g, 0).toFixed(1))
+  const dayFat = parseFloat(mealItems.reduce((a, i) => a + i.fat_g, 0).toFixed(1))
+  const remaining = profile.daily_kcal_goal - dayKcal
+  const progressPct = Math.min((dayKcal / profile.daily_kcal_goal) * 100, 100)
 
-  const openMeal = (type: string) => {
-    const existing = getMealData(type)
-    if (existing) {
-      setForm({
-        foods: existing.foods ?? '',
-        kcal: existing.kcal_estimated?.toString() ?? '',
-        hunger: existing.hunger_before ?? 5,
-        satiety: existing.satiety_after ?? 5,
-        mood: (existing.mood as MoodKey) ?? 'neutro',
-        notes: existing.notes ?? '',
-      })
-    } else {
-      setForm(DEFAULT_FORM)
+  const getMeal = (type: string) => meals.find((m) => m.meal_type === type as Meal['meal_type'])
+  const getItems = (type: string) => mealItems.filter((i) => i.meal_type === type)
+
+  const getForm = (type: string): SubjectiveForm => {
+    if (forms[type]) return forms[type]
+    const meal = getMeal(type)
+    if (meal) return {
+      hunger: meal.hunger_before ?? 5,
+      satiety: meal.satiety_after ?? 5,
+      mood: (meal.mood as MoodKey) ?? 'neutro',
+      notes: meal.notes ?? '',
     }
-    setExpanded(expanded === type ? null : type)
+    return DEFAULT_FORM
   }
 
-  const saveMeal = async (type: string) => {
-    if (!profile) return
+  const setForm = (type: string, patch: Partial<SubjectiveForm>) =>
+    setForms((prev) => ({ ...prev, [type]: { ...getForm(type), ...patch } }))
+
+  const saveSubjective = async (type: string) => {
+    const f = getForm(type)
     setSaving(true)
-    const existing = getMealData(type)
+    const existing = getMeal(type)
+    const typeItems = getItems(type)
     await upsertMeal(profile.id, {
       id: existing?.id,
       meal_type: type as Meal['meal_type'],
-      foods: form.foods,
-      kcal_estimated: parseInt(form.kcal) || undefined,
-      hunger_before: form.hunger,
-      satiety_after: form.satiety,
-      mood: form.mood,
-      notes: form.notes,
+      hunger_before: f.hunger,
+      satiety_after: f.satiety,
+      mood: f.mood,
+      notes: f.notes,
+      kcal_estimated: existing?.kcal_estimated ?? Math.round(typeItems.reduce((a, i) => a + i.kcal, 0)),
+      foods: existing?.foods,
     })
     setSaving(false)
-    setExpanded(null)
-    showToast('Comida registrada.')
+    setShowSubjective(null)
+    showToast('Guardado.')
+  }
+
+  const handleAddItems = async (items: Omit<MealItem, 'id' | 'created_at'>[]) => {
+    await addMealItems(profile.id, items)
+    showToast('Alimento añadido.')
   }
 
   return (
@@ -87,12 +114,13 @@ export function Alimentacion() {
       <div className="space-y-5 animate-fade-in">
         <PageHeader title="Alimentación" subtitle="Registra tu nutrición de hoy" />
 
-        {/* Kcal summary */}
-        <Card className="space-y-3">
+        {/* ── Day summary ─────────────────────────────────── */}
+        <Card className="space-y-4">
+          {/* Kcal row */}
           <div className="flex items-end justify-between">
             <div>
               <p className="text-base-stone text-xs uppercase tracking-widest">Consumidas</p>
-              <p className="text-3xl font-bold text-base-white">{totalKcal}</p>
+              <p className="text-3xl font-bold text-base-white">{dayKcal}</p>
               <p className="text-base-stone text-xs">de {profile.daily_kcal_goal} kcal</p>
             </div>
             <div className="text-right">
@@ -103,125 +131,138 @@ export function Alimentacion() {
               <p className="text-base-stone text-xs">{remaining < 0 ? 'sobre el objetivo' : 'disponibles'}</p>
             </div>
           </div>
+
+          {/* Kcal bar */}
           <div className="w-full h-2 bg-base-muted rounded-full overflow-hidden">
-            <div
-              className={cn('h-full rounded-full transition-all duration-700', remaining < 0 ? 'bg-base-warning' : 'bg-base-success')}
-              style={{ width: `${progressPct}%` }}
-            />
+            <div className={cn('h-full rounded-full transition-all duration-700', remaining < 0 ? 'bg-base-warning' : 'bg-base-success')}
+              style={{ width: `${progressPct}%` }} />
           </div>
+
+          {/* Macro bars */}
+          {(dayProtein > 0 || dayCarbs > 0 || dayFat > 0) && (
+            <div className="grid grid-cols-3 gap-4 pt-1">
+              <MacroBar label="Proteína" value={dayProtein} max={200} color="#4A7C59" />
+              <MacroBar label="Hidratos" value={dayCarbs} max={300} color="#C4A35A" />
+              <MacroBar label="Grasas" value={dayFat} max={100} color="#8A7A4A" />
+            </div>
+          )}
         </Card>
 
-        {/* Meals */}
+        {/* ── Meal cards ──────────────────────────────────── */}
         <div className="space-y-2">
           {activeMeals.map((type) => {
-            const data = getMealData(type)
+            const meal = getMeal(type)
+            const items = getItems(type)
+            const mealKcal = items.length
+              ? Math.round(items.reduce((a, i) => a + i.kcal, 0))
+              : (meal?.kcal_estimated ?? 0)
             const isOpen = expanded === type
+            const hasData = items.length > 0 || !!meal
+
             return (
-              <div key={type} className={cn('bg-base-dim border rounded-2xl overflow-hidden transition-colors duration-300', data ? 'border-base-success/40' : 'border-base-border')}>
+              <div key={type} className={cn('border rounded-2xl overflow-hidden transition-colors duration-300',
+                hasData ? 'border-base-success/30 bg-base-dim' : 'border-base-border bg-base-dim')}>
 
                 {/* Meal header */}
-                <button
-                  onClick={() => openMeal(type)}
-                  className="w-full flex items-center justify-between p-4"
-                >
+                <button onClick={() => setExpanded(isOpen ? null : type)} className="w-full flex items-center justify-between p-4">
                   <div className="flex items-center gap-3">
-                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-xs', data ? 'bg-base-success/20 text-base-success' : 'bg-base-muted text-base-stone')}>
-                      {data ? '✓' : '+'}
+                    <div className={cn('w-8 h-8 rounded-lg flex items-center justify-center text-xs',
+                      hasData ? 'bg-base-success/20 text-base-success' : 'bg-base-muted text-base-stone')}>
+                      {hasData ? '✓' : '+'}
                     </div>
                     <div className="text-left">
                       <p className="text-sm font-medium text-base-white">{MEAL_LABELS[type]}</p>
-                      {data ? (
-                        <p className="text-xs text-base-stone">
-                          {data.kcal_estimated ? `${data.kcal_estimated} kcal` : 'Registrada'}
-                          {data.mood ? ` · ${MOOD_MAP[data.mood as MoodKey]?.emoji}` : ''}
-                        </p>
-                      ) : (
-                        <p className="text-xs text-base-stone">Sin registrar</p>
-                      )}
+                      <p className="text-xs text-base-stone">
+                        {items.length > 0
+                          ? `${items.length} alimento${items.length !== 1 ? 's' : ''} · ${mealKcal} kcal`
+                          : meal ? `${mealKcal} kcal` : 'Sin registrar'}
+                      </p>
                     </div>
                   </div>
                   {isOpen ? <ChevronUp size={16} className="text-base-stone" /> : <ChevronDown size={16} className="text-base-stone" />}
                 </button>
 
-                {/* Meal form */}
+                {/* Expanded content */}
                 {isOpen && (
-                  <div className="px-4 pb-5 space-y-4 border-t border-base-border">
-                    <div className="h-3" />
+                  <div className="px-4 pb-5 space-y-3 border-t border-base-border">
+                    <div className="h-2" />
 
-                    {/* Photo placeholder */}
-                    <button className="w-full h-24 border border-dashed border-base-border rounded-xl flex flex-col items-center justify-center gap-2 text-base-stone hover:border-base-stone transition-colors">
-                      <Camera size={20} />
-                      <span className="text-xs">Añadir foto del plato</span>
+                    {/* Food items list */}
+                    {items.map((item) => (
+                      <div key={item.id} className="flex items-start gap-3 py-2 border-b border-base-border/40 last:border-0">
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm text-base-ivory font-medium truncate">{item.food_name}</p>
+                          <p className="text-xs mt-0.5" style={{ color: '#6A6A5A' }}>
+                            {item.quantity_g}g · {Math.round(item.kcal)} kcal
+                            {item.protein_g > 0 && ` · P ${item.protein_g}g`}
+                            {item.carbs_g > 0 && ` · H ${item.carbs_g}g`}
+                            {item.fat_g > 0 && ` · G ${item.fat_g}g`}
+                          </p>
+                        </div>
+                        <button onClick={() => deleteMealItem(item.id)} className="text-base-stone hover:text-red-400 transition-colors flex-shrink-0 mt-0.5">
+                          <Trash2 size={13} />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Add food button */}
+                    <button
+                      onClick={() => setModalMeal(type)}
+                      className="w-full flex items-center justify-center gap-2 py-3 rounded-xl border border-dashed border-base-border text-base-stone hover:border-[#353528] hover:text-base-ivory transition-colors text-sm"
+                    >
+                      <Plus size={14} />
+                      Añadir alimento
                     </button>
 
-                    <Input
-                      label="Alimentos"
-                      placeholder="Ej: Arroz integral, pollo a la plancha, ensalada"
-                      value={form.foods}
-                      onChange={(e) => setForm({ ...form, foods: e.target.value })}
-                    />
+                    {/* Subjective section */}
+                    <button
+                      onClick={() => setShowSubjective(showSubjective === type ? null : type)}
+                      className="w-full flex items-center justify-between py-2 text-xs text-base-stone hover:text-base-ivory transition-colors"
+                    >
+                      <span className="uppercase tracking-widest" style={{ fontSize: '0.6rem' }}>Cómo me sentí</span>
+                      {showSubjective === type ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
+                    </button>
 
-                    <Input
-                      label="Calorías estimadas"
-                      type="number"
-                      placeholder="ej: 650"
-                      value={form.kcal}
-                      onChange={(e) => setForm({ ...form, kcal: e.target.value })}
-                    />
+                    {showSubjective === type && (
+                      <div className="space-y-4 pt-1">
+                        <Slider label="Hambre antes" value={getForm(type).hunger} onChange={(v) => setForm(type, { hunger: v })} />
+                        <Slider label="Saciedad después" value={getForm(type).satiety} onChange={(v) => setForm(type, { satiety: v })} />
 
-                    <Slider
-                      label="Hambre antes"
-                      value={form.hunger}
-                      onChange={(v) => setForm({ ...form, hunger: v })}
-                    />
-                    <Slider
-                      label="Saciedad después"
-                      value={form.satiety}
-                      onChange={(v) => setForm({ ...form, satiety: v })}
-                    />
+                        <div className="space-y-2">
+                          <p className="text-xs text-base-stone uppercase tracking-widest">Estado emocional</p>
+                          <div className="flex gap-2 flex-wrap">
+                            {(Object.entries(MOOD_MAP) as [MoodKey, { emoji: string; label: string }][]).map(([k, { emoji, label }]) => (
+                              <button key={k} onClick={() => setForm(type, { mood: k })}
+                                className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all',
+                                  getForm(type).mood === k
+                                    ? 'bg-base-forest border-base-success text-base-white'
+                                    : 'border-base-border text-base-stone hover:border-base-stone')}>
+                                {emoji} {label}
+                              </button>
+                            ))}
+                          </div>
+                        </div>
 
-                    {/* Mood */}
-                    <div className="space-y-2">
-                      <p className="text-xs text-base-stone uppercase tracking-widest">Estado emocional</p>
-                      <div className="flex gap-2 flex-wrap">
-                        {(Object.entries(MOOD_MAP) as [MoodKey, { emoji: string; label: string }][]).map(([k, { emoji, label }]) => (
-                          <button
-                            key={k}
-                            onClick={() => setForm({ ...form, mood: k })}
-                            className={cn(
-                              'flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs border transition-all',
-                              form.mood === k
-                                ? 'bg-base-forest border-base-success text-base-white'
-                                : 'border-base-border text-base-stone hover:border-base-stone'
-                            )}
-                          >
-                            {emoji} {label}
-                          </button>
-                        ))}
+                        <TextArea
+                          label="Observaciones"
+                          placeholder="¿Cómo te has sentido con esta comida?"
+                          rows={2}
+                          value={getForm(type).notes}
+                          onChange={(e) => setForm(type, { notes: e.target.value })}
+                        />
+
+                        <div className="flex gap-2">
+                          <Button fullWidth onClick={() => saveSubjective(type)} disabled={saving}>
+                            {saving ? 'Guardando…' : 'Guardar'}
+                          </Button>
+                          {meal && !items.length && (
+                            <Button variant="danger" onClick={async () => { await deleteMeal(meal.id); setExpanded(null) }}>
+                              <Trash2 size={14} />
+                            </Button>
+                          )}
+                        </div>
                       </div>
-                    </div>
-
-                    <TextArea
-                      label="Observaciones"
-                      placeholder="¿Cómo te has sentido con esta comida?"
-                      rows={2}
-                      value={form.notes}
-                      onChange={(e) => setForm({ ...form, notes: e.target.value })}
-                    />
-
-                    <div className="flex gap-2">
-                      <Button fullWidth onClick={() => saveMeal(type)} disabled={saving}>
-                        {saving ? 'Guardando…' : 'Guardar'}
-                      </Button>
-                      {data && (
-                        <Button
-                          variant="danger"
-                          onClick={async () => { await deleteMeal(data.id); setExpanded(null) }}
-                        >
-                          <Trash2 size={14} />
-                        </Button>
-                      )}
-                    </div>
+                    )}
                   </div>
                 )}
               </div>
@@ -229,6 +270,16 @@ export function Alimentacion() {
           })}
         </div>
       </div>
+
+      {/* Food Search Modal */}
+      <FoodSearchModal
+        isOpen={!!modalMeal}
+        mealType={modalMeal ?? ''}
+        userId={profile.id}
+        date={todayDate}
+        onAdd={handleAddItems}
+        onClose={() => setModalMeal(null)}
+      />
     </AppShell>
   )
 }

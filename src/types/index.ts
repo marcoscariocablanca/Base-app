@@ -33,11 +33,30 @@ export interface Meal {
   meal_type: 'desayuno' | 'media_manana' | 'comida' | 'merienda' | 'cena'
   foods?: string
   kcal_estimated?: number
+  protein_g?: number
+  carbs_g?: number
+  fat_g?: number
   hunger_before?: number
   satiety_after?: number
   mood?: 'bien' | 'neutro' | 'bajo' | 'estres' | 'ansiedad'
   photo_url?: string
   notes?: string
+  created_at: string
+}
+
+export interface MealItem {
+  id: string
+  user_id: string
+  date: string
+  meal_type: string
+  food_name: string
+  food_id?: string
+  quantity_g: number
+  kcal: number
+  protein_g: number
+  carbs_g: number
+  fat_g: number
+  source: 'usda' | 'manual' | 'photo'
   created_at: string
 }
 
