@@ -1,12 +1,13 @@
 import { create } from 'zustand'
 import { supabase } from '../lib/supabase'
 import { today } from '../lib/utils'
-import type { NonNegotiable, Meal, MealItem, Training, Evidence, MentorFeedback } from '../types'
+import type { NonNegotiable, Meal, MealItem, FavoriteFood, Training, Evidence, MentorFeedback } from '../types'
 
 interface DataState {
   nonNeg: NonNegotiable | null
   meals: Meal[]
   mealItems: MealItem[]
+  favorites: FavoriteFood[]
   training: Training | null
   evidence: Evidence | null
   feedback: MentorFeedback[]
@@ -21,6 +22,9 @@ interface DataState {
   deleteMeal: (id: string) => Promise<void>
   addMealItems: (userId: string, items: Omit<MealItem, 'id' | 'created_at'>[], date?: string) => Promise<void>
   deleteMealItem: (id: string) => Promise<void>
+  fetchFavorites: (userId: string) => Promise<void>
+  addFavorite: (userId: string, food: Omit<FavoriteFood, 'id' | 'user_id' | 'created_at'>) => Promise<void>
+  removeFavorite: (id: string) => Promise<void>
   upsertTraining: (userId: string, fields: Partial<Training>) => Promise<void>
   upsertEvidence: (userId: string, fields: Partial<Evidence>) => Promise<void>
   fetchFeedback: (userId: string) => Promise<void>
@@ -32,6 +36,7 @@ export const useDataStore = create<DataState>((set, get) => ({
   nonNeg: null,
   meals: [],
   mealItems: [],
+  favorites: [],
   training: null,
   evidence: null,
   feedback: [],
@@ -190,5 +195,20 @@ export const useDataStore = create<DataState>((set, get) => ({
   markFeedbackRead: async (id) => {
     await supabase.from('mentor_feedback').update({ read: true }).eq('id', id)
     set((s) => ({ feedback: s.feedback.map((f) => (f.id === id ? { ...f, read: true } : f)) }))
+  },
+
+  fetchFavorites: async (userId) => {
+    const { data } = await supabase.from('favorite_foods').select('*').eq('user_id', userId).order('created_at', { ascending: false })
+    set({ favorites: data ?? [] })
+  },
+
+  addFavorite: async (userId, food) => {
+    const { data } = await supabase.from('favorite_foods').upsert({ user_id: userId, ...food }, { onConflict: 'user_id,food_name' }).select().single()
+    if (data) set((s) => ({ favorites: [data, ...s.favorites.filter((f) => f.food_name !== food.food_name)] }))
+  },
+
+  removeFavorite: async (id) => {
+    await supabase.from('favorite_foods').delete().eq('id', id)
+    set((s) => ({ favorites: s.favorites.filter((f) => f.id !== id) }))
   },
 }))

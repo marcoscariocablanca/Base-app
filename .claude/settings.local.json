@@ -10,7 +10,8 @@
       "Bash(npx tsc *)",
       "Bash(git add *)",
       "Bash(git commit *)",
-      "Bash(git push *)"
+      "Bash(git push *)",
+      "Bash(curl -s --max-time 10 \"http://www.bedca.net/bdpub/index.php\" -o /dev/null -w \"%{http_code}\")"
     ]
   }
 }

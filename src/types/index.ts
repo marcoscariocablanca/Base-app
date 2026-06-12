@@ -90,6 +90,19 @@ export interface MentorFeedback {
   created_at: string
 }
 
+export interface FavoriteFood {
+  id: string
+  user_id: string
+  food_name: string
+  food_id?: string
+  kcal_per_100g: number
+  protein_per_100g: number
+  carbs_per_100g: number
+  fat_per_100g: number
+  default_quantity_g: number
+  created_at: string
+}
+
 export interface DaySummary {
   date: string
   non_neg_score: number
