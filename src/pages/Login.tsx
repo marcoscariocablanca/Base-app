@@ -2,7 +2,6 @@ import { useState } from 'react'
 import { useAuthStore } from '../store/authStore'
 import { Button } from '../components/ui/Button'
 import { Input } from '../components/ui/Input'
-import { BaseLogo } from '../components/ui/BaseLogo'
 
 type Mode = 'login' | 'register'
 
@@ -38,13 +37,13 @@ export function Login() {
         {/* ── Logo Mark + Wordmark ─────────────────────────── */}
         <div className="flex flex-col items-center mb-12">
 
-          {/* Geometric mark */}
-          <div className="mb-6 relative">
-            <BaseLogo size={80} />
-            {/* Subtle glow behind the mark */}
-            <div
-              className="absolute inset-0 -z-10 blur-2xl opacity-30"
-              style={{ background: 'radial-gradient(circle, #C8AE42 0%, transparent 70%)' }}
+          {/* Official BASE logo */}
+          <div className="mb-6 relative flex items-center justify-center">
+            <img
+              src="/logo-base.png"
+              alt="BASE"
+              className="w-24 h-24 object-contain"
+              style={{ filter: 'drop-shadow(0 0 24px rgba(180,160,60,0.25))' }}
             />
           </div>
 
